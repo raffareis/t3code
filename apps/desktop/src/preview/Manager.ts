@@ -1473,6 +1473,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
       sendCleanup: SendCommand,
       checkControl: Effect.Effect<void, PreviewManagerError>,
     ) => Effect.Effect<A, PreviewManagerError>,
+    timeoutMs = 12_000,
   ) {
     const sequence = yield* nextCounter(actionSequenceRef);
     const startedAt = yield* currentIso;
@@ -1485,8 +1486,15 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     };
     yield* pushAction(tabId, actionEvent);
     const epoch = (yield* Ref.get(controlEpochRef)).get(tabId) ?? 0;
-    const control = yield* ensureControlSession(wc);
+    const control = yield* ensureControlSession(wc).pipe(
+      Effect.timeoutOrElse({
+        duration: timeoutMs,
+        orElse: () => Effect.fail(new PreviewAutomationTimeoutError({ tabId, timeoutMs })),
+      }),
+    );
+    let enteredControl = false;
     const execute = Effect.fn("PreviewManager.executeControlAction")(function* () {
+      enteredControl = true;
       yield* update(tabId, { controller: "agent" });
       const checkControl = Effect.gen(function* () {
         const currentEpoch = (yield* Ref.get(controlEpochRef)).get(tabId) ?? 0;
@@ -1530,7 +1538,11 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
           );
         },
       );
-      return yield* use(send, sendCleanup, checkControl);
+      return yield* use(send, sendCleanup, checkControl).pipe(
+        Effect.onInterrupt(() =>
+          sendCleanup("Runtime.terminateExecution").pipe(Effect.timeoutOption(500), Effect.ignore),
+        ),
+      );
     });
     const finalize = Effect.fn("PreviewManager.finalizeControlAction")(function* (
       exit: Exit.Exit<A, PreviewManagerError>,
@@ -1562,9 +1574,16 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
         });
       }
       const tabs = yield* SynchronizedRef.get(tabsRef);
-      if (tabs.has(tabId)) yield* update(tabId, { controller: "none" });
+      if (enteredControl && tabs.has(tabId)) yield* update(tabId, { controller: "none" });
     });
-    return yield* control.semaphore.withPermit(execute().pipe(Effect.onExit(finalize)));
+    // Include time queued for control: a timed-out caller must not dispatch later.
+    return yield* control.semaphore.withPermit(execute().pipe(Effect.onExit(finalize))).pipe(
+      Effect.timeoutOrElse({
+        duration: Math.max(1, timeoutMs - ((yield* currentMillis) - millis)),
+        orElse: () => Effect.fail(new PreviewAutomationTimeoutError({ tabId, timeoutMs })),
+      }),
+      Effect.onExit((exit) => (enteredControl ? Effect.void : finalize(exit))),
+    );
   });
 
   const evaluateWithDebugger = <A = unknown>(
@@ -3907,8 +3926,12 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     input: PreviewAutomationClickInput,
   ) {
     const wc = yield* requireWebContents(tabId);
-    yield* withControlSession(tabId, wc, "click", (send) =>
-      performAutomationClick(tabId, input, send),
+    yield* withControlSession(
+      tabId,
+      wc,
+      "click",
+      (send) => performAutomationClick(tabId, input, send),
+      input.timeoutMs ?? 12_000,
     );
   });
 
@@ -4033,8 +4056,12 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     input: PreviewAutomationTypeInput,
   ) {
     const wc = yield* requireWebContents(tabId);
-    yield* withControlSession(tabId, wc, "type", (send) =>
-      performAutomationType(tabId, input, send),
+    yield* withControlSession(
+      tabId,
+      wc,
+      "type",
+      (send) => performAutomationType(tabId, input, send),
+      input.timeoutMs ?? 12_000,
     );
   });
 
@@ -4469,8 +4496,12 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     input: PreviewAutomationEvaluateInput,
   ) {
     const wc = yield* requireWebContents(tabId);
-    return yield* withControlSession(tabId, wc, "evaluate", (send) =>
-      performAutomationEvaluate(tabId, input, send),
+    return yield* withControlSession(
+      tabId,
+      wc,
+      "evaluate",
+      (send) => performAutomationEvaluate(tabId, input, send),
+      input.timeoutMs ?? 12_000,
     );
   });
 
@@ -4540,8 +4571,12 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     input: PreviewAutomationWaitForInput,
   ) {
     const wc = yield* requireWebContents(tabId);
-    yield* withControlSession(tabId, wc, "waitFor", (send) =>
-      performAutomationWaitFor(tabId, input, send),
+    yield* withControlSession(
+      tabId,
+      wc,
+      "waitFor",
+      (send) => performAutomationWaitFor(tabId, input, send),
+      input.timeoutMs ?? 12_000,
     );
   });
 

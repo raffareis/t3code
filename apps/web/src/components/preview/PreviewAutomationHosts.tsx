@@ -686,17 +686,17 @@ function PreviewAutomationHost(props: { readonly environmentId: EnvironmentId })
           }
           case "click": {
             const ready = await requireReadyTab();
-            return await ready.bridge.automation.click(
-              ready.runtimeTabId,
-              request.input as Parameters<typeof ready.bridge.automation.click>[1],
-            );
+            return await ready.bridge.automation.click(ready.runtimeTabId, {
+              ...(request.input as Parameters<typeof ready.bridge.automation.click>[1]),
+              timeoutMs: Math.max(1, hostDeadlineMs - Date.now()),
+            });
           }
           case "type": {
             const ready = await requireReadyTab();
-            return await ready.bridge.automation.type(
-              ready.runtimeTabId,
-              request.input as Parameters<typeof ready.bridge.automation.type>[1],
-            );
+            return await ready.bridge.automation.type(ready.runtimeTabId, {
+              ...(request.input as Parameters<typeof ready.bridge.automation.type>[1]),
+              timeoutMs: Math.max(1, hostDeadlineMs - Date.now()),
+            });
           }
           case "press": {
             const ready = await requireReadyTab();
@@ -714,17 +714,17 @@ function PreviewAutomationHost(props: { readonly environmentId: EnvironmentId })
           }
           case "evaluate": {
             const ready = await requireReadyTab();
-            return await ready.bridge.automation.evaluate(
-              ready.runtimeTabId,
-              request.input as Parameters<typeof ready.bridge.automation.evaluate>[1],
-            );
+            return await ready.bridge.automation.evaluate(ready.runtimeTabId, {
+              ...(request.input as Parameters<typeof ready.bridge.automation.evaluate>[1]),
+              timeoutMs: Math.max(1, hostDeadlineMs - Date.now()),
+            });
           }
           case "waitFor": {
             const ready = await requireReadyTab();
-            return await ready.bridge.automation.waitFor(
-              ready.runtimeTabId,
-              request.input as Parameters<typeof ready.bridge.automation.waitFor>[1],
-            );
+            return await ready.bridge.automation.waitFor(ready.runtimeTabId, {
+              ...(request.input as Parameters<typeof ready.bridge.automation.waitFor>[1]),
+              timeoutMs: Math.max(1, hostDeadlineMs - Date.now()),
+            });
           }
           case "recordingStart": {
             const ready = await requireReadyTab();

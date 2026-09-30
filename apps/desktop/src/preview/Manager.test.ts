@@ -2664,6 +2664,77 @@ describe("PreviewManager", () => {
     ),
   );
 
+  effectIt.effect("times out a stalled evaluation and releases control for the next action", () =>
+    withManager((manager) =>
+      Effect.gen(function* () {
+        const wc = makeTestPreviewWebContents(vi.fn());
+        Object.assign(wc, { isDevToolsOpened: () => false });
+        const sendCommand = vi.fn(async (method: string, params?: Record<string, unknown>) => {
+          if (method === "Runtime.evaluate") {
+            if (params?.["expression"] === "hang") return await new Promise(() => {});
+            return { result: { value: 42 } };
+          }
+          return undefined;
+        });
+        Object.assign(wc.debugger, { sendCommand });
+        fromId.mockReturnValue(wc);
+        yield* manager.createTab("tab_1");
+        yield* manager.registerWebview("tab_1", 42);
+        const pending = yield* manager
+          .automationEvaluate("tab_1", { expression: "hang", timeoutMs: 1_000 })
+          .pipe(Effect.exit, Effect.forkChild({ startImmediately: true }));
+        yield* TestClock.adjust(1_000);
+        const exit = yield* Fiber.join(pending);
+        expect(Exit.isFailure(exit)).toBe(true);
+        if (Exit.isFailure(exit))
+          expect(Option.getOrThrow(Cause.findErrorOption(exit.cause))).toMatchObject({
+            _tag: "PreviewAutomationTimeoutError",
+            timeoutMs: 1_000,
+          });
+        expect(
+          sendCommand.mock.calls.some(([method]) => method === "Runtime.terminateExecution"),
+        ).toBe(true);
+        expect(yield* manager.automationEvaluate("tab_1", { expression: "42" })).toBe(42);
+      }),
+    ),
+  );
+
+  effectIt.effect("does not execute an evaluation whose budget expired while queued", () =>
+    withManager((manager) =>
+      Effect.gen(function* () {
+        const wc = makeTestPreviewWebContents(vi.fn());
+        Object.assign(wc, { isDevToolsOpened: () => false });
+        const expressions: unknown[] = [];
+        Object.assign(wc.debugger, {
+          sendCommand: vi.fn(async (method: string, params?: Record<string, unknown>) => {
+            if (method === "Runtime.evaluate") {
+              expressions.push(params?.["expression"]);
+              if (params?.["expression"] === "hang") return await new Promise(() => {});
+              return { result: { value: 42 } };
+            }
+            return undefined;
+          }),
+        });
+        fromId.mockReturnValue(wc);
+        yield* manager.createTab("tab_1");
+        yield* manager.registerWebview("tab_1", 42);
+        const first = yield* manager
+          .automationEvaluate("tab_1", { expression: "hang", timeoutMs: 2_000 })
+          .pipe(Effect.exit, Effect.forkChild({ startImmediately: true }));
+        yield* TestClock.adjust(0);
+        const queued = yield* manager
+          .automationEvaluate("tab_1", { expression: "expired", timeoutMs: 500 })
+          .pipe(Effect.exit, Effect.forkChild({ startImmediately: true }));
+        yield* TestClock.adjust(500);
+        expect(Exit.isFailure(yield* Fiber.join(queued))).toBe(true);
+        yield* TestClock.adjust(1_500);
+        yield* Fiber.join(first);
+        expect(yield* manager.automationEvaluate("tab_1", { expression: "42" })).toBe(42);
+        expect(expressions).toEqual(["hang", "42"]);
+      }),
+    ),
+  );
+
   effectIt.effect("grants each concurrent preview recording its own tab frame", () =>
     withManager((manager) =>
       Effect.gen(function* () {

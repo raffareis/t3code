@@ -417,6 +417,7 @@ export type PreviewAutomationScrollInput = typeof PreviewAutomationScrollInput.T
 
 export const PreviewAutomationEvaluateInput = Schema.Struct({
   ...PreviewAutomationTabTargetFields,
+  timeoutMs: OptionalTimeoutMs,
   expression: Schema.String.check(Schema.isTrimmed())
     .check(
       Schema.isNonEmpty({
