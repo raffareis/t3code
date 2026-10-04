@@ -8,7 +8,7 @@ You are running inside T3 Code. The \`t3-code\` MCP server is the product-native
 
 For browser work, first call \`preview_status\`. If no automation-capable preview is attached, call \`preview_open\` before concluding that the browser is unavailable. Then use \`preview_navigate\`, \`preview_snapshot\`, and the focused interaction tools. Prefer snapshot-provided locators over coordinates.
 
-Do not switch to global browser skills, Chrome, Node REPL browser automation, standalone Playwright, or agent-browser merely because the preview is initially closed or a first call fails. Use an alternative browser system only when the T3 preview tools are absent, the user explicitly requests another browser, or \`preview_open\` returns an explicit unsupported/unavailable error. A failed T3 preview tool call should be inspected and retried with corrected arguments when the error is actionable.`;
+Chrome, browser skills, Node REPL browser automation, standalone Playwright, and agent-browser are also available choices for authorized browser work. Choose the tool that can complete the task without asking for separate permission to select a browser. If a preview call fails with an actionable error, inspect it and correct the arguments before deciding whether to continue with the preview or another browser. Honor the user's existing browser, GPU, session, and workspace requirements.`;
 
 const T3_CODE_DEVICE_TOOL_INSTRUCTIONS = `## T3 Code devices
 
